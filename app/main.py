@@ -335,6 +335,11 @@ def get_ngrok_url():
 async def health():
     return {"status": "ok", "time": str(datetime.utcnow())}
 
+@app.on_event("startup")
+async def startup_event():
+    log.info("Application is starting")
+    load_instruments()
+
 if __name__ == "__main__":
     import uvicorn
     try:

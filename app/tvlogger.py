@@ -3,7 +3,7 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-LOG_DIR = "logs"
+LOG_DIR = "../logs"
 LOG_FILE = "tradingview_algo.log"
 
 # Ensure logs folder exists
@@ -21,7 +21,7 @@ def get_logger(name: str = "tv-algo"):
 
     if logger.handlers:
         return logger  # Avoid adding handlers twice
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = os.getenv("LOG_LEVEL").upper()
     logger.setLevel(log_level)
 
     log_path = os.path.join(LOG_DIR, LOG_FILE)
