@@ -1,7 +1,6 @@
 import os
 import csv
 import json
-import time
 import threading
 from datetime import datetime, date
 from functools import lru_cache
@@ -83,7 +82,7 @@ def load_instruments(local_path=INSTRUMENTS_LOCAL):
         reader = csv.DictReader(f)
         for r in reader:
             rows.append(r)
-    log.info("Loaded %d instrument rows", len(rows))
+    log.debug("Loaded %d instrument rows", len(rows))
     return rows
 
 def parse_date_try(s: Optional[str]) -> Optional[date]:
@@ -177,7 +176,7 @@ def notify_telegram(message: str):
 @app.post("/webhook")
 async def webhook(request: Request):
     body = await request.json()
-    log.info("Webhook payload: %s", body)
+    log.debug("Webhook payload: %s", body)
     tv_secret = body.get("secret", "")
     if tv_secret != TV_WEBHOOK_SECRET:
         log.warning("Invalid TV secret in payload")
@@ -192,7 +191,7 @@ async def webhook(request: Request):
     with lock:
         state = load_state()
         if alert_id and alert_id in state.get("processed_alert_ids", []):
-            log.info("Duplicate alert_id received: %s -> ignoring", alert_id)
+            log.debug("Duplicate alert_id received: %s -> ignoring", alert_id)
             return JSONResponse({"status": "duplicate_alert_ignored"}, status_code=200)
     try:
         spot = float(spot)
@@ -212,7 +211,7 @@ async def webhook(request: Request):
             try:
                 sid = leg["security_id"]
                 qty = leg.get("quantity", 1)
-                log.info("place_order_on_dhan with sid : %s , type : SELL, quantity: %s", sid, qty)
+                log.debug("place_order_on_dhan with sid : %s , type : SELL, quantity: %s", sid, qty)
                 sellorder = dhan.place_order(security_id=sid,
                                              exchange_segment=dhan.NSE_FNO,
                                              transaction_type=dhan.SELL,
@@ -220,7 +219,7 @@ async def webhook(request: Request):
                                              order_type=dhan.MARKET,
                                              product_type=dhan.INTRA,
                                              price=0)
-                log.info("Closed leg %s -> order: %s", leg, sellorder)
+                log.debug("Closed leg %s -> order: %s", leg, sellorder)
                 notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('expiry')}: {sellorder}")
                 return sellorder
             except Exception:
@@ -235,7 +234,7 @@ async def webhook(request: Request):
                 raise RuntimeError(f"Instrument not found for {symbol} {option_type} strike {strike} exp {expiry}")
             sid = row.get("SECURITY_ID")
             qty = quantity_for_instrument_row(row, lots=1)
-            log.info("place_order_on_dhan with sid : %s , type : BUY, quantity: %s", sid, qty)
+            log.debug("place_order_on_dhan with sid : %s , type : BUY, quantity: %s", sid, qty)
             order = dhan.place_order(security_id=sid,
                                      exchange_segment=dhan.NSE_FNO,
                                      transaction_type=dhan.BUY,
@@ -247,7 +246,7 @@ async def webhook(request: Request):
             state["open_leg"] = new_leg
             save_state(state)
             notify_telegram(f"Opened {option_type} {strike} {expiry}: {order}")
-            log.info("Opened leg: %s", new_leg)
+            log.debug("Opened leg: %s", new_leg)
             return new_leg
 
         try:

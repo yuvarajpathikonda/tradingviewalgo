@@ -21,8 +21,8 @@ def get_logger(name: str = "tv-algo"):
 
     if logger.handlers:
         return logger  # Avoid adding handlers twice
-
-    logger.setLevel(logging.DEBUG)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(log_level)
 
     log_path = os.path.join(LOG_DIR, LOG_FILE)
 
@@ -33,14 +33,14 @@ def get_logger(name: str = "tv-algo"):
         backupCount=5,
         encoding="utf-8"
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(log_level)
     file_handler.setFormatter(logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     ))
 
     # Console handler (DEBUG only)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(log_level)
     console_handler.setFormatter(logging.Formatter(
         "%(asctime)s | %(levelname)s | %(message)s"
     ))
