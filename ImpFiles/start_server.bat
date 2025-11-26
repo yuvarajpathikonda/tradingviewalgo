@@ -3,7 +3,7 @@ REM Navigate to project folder
 cd /d "D:/TradingViewAlgo"
 
 REM Build and run Docker containers
-docker-compose up -d --build
+docker compose up -d --force-recreate
 
 REM Give Docker a few seconds to start ngrok
 timeout /t 5 /nobreak >nul

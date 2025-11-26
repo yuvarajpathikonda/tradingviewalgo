@@ -1,0 +1,6 @@
+2025-11-26 17:13:28,877 | INFO | main | Application is starting
+2025-11-26 17:13:28,877 | INFO | main | Downloading instruments CSV from https://images.dhan.co/api-data/api-scrip-master-detailed.csv
+2025-11-26 17:13:31,394 | DEBUG | main | Saved instruments CSV -> dhan_instruments_detailed.csv
+2025-11-26 17:13:32,917 | DEBUG | main | Loaded 213832 instrument rows
+2025-11-26 17:15:15,965 | INFO | main | Application is starting
+2025-11-26 17:15:15,965 | INFO | main | Downloading instruments CSV from https://images.dhan.co/api-data/api-scrip-master-detailed.csv
