@@ -32,10 +32,17 @@ docker rm TradingViewAlgo
 
 docker-compose up -d --build
 
+docker tag tradingviewalgo-server:latest mageshtv2025/tradingviewalgorepo:server-latest
+docker tag ngrok/ngrok:latest mageshtv2025/tradingviewalgorepo:ngrok-latest
+
+docker push mageshtv2025/tradingviewalgorepo:server-latest
+docker push mageshtv2025/tradingviewalgorepo:ngrok-latest
+
+docker pull mageshtv2025/tradingviewalgorepo:ngrok-latest
+docker pull mageshtv2025/tradingviewalgorepo:server-latest
 
 for /f "tokens=*" %i in ('docker ps -aq') do docker stop %i & docker rm %i
 for /f "tokens=*" %i in ('docker images -aq') do docker rmi -f %i
-docker-compose up -d --build
 
 
 
