@@ -1,2 +1,4 @@
 /app/logs/
 /.venv/
+/.idea/
+ app/__pycache__/
