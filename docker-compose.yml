@@ -4,21 +4,16 @@ services:
     container_name: TradingViewAlgo
     ports:
       - "8000:8000"
-    environment:
-      DHAN_ACCESS_TOKEN: ${DHAN_ACCESS_TOKEN}
-      DHAN_CLIENT_ID: ${DHAN_CLIENT_ID}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 5s
-      retries: 5
+    env_file:
+      - .env
 
   ngrok:
     image: ngrok/ngrok:latest        # <-- OFFICIAL, auto-updated
     container_name: ngrok
     depends_on:
       - server
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    env_file:
+      - .env
     command:
       - http
       - server:8000
