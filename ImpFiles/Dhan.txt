@@ -1,0 +1,41 @@
+Mahesh
+mageshtv2025@gmail.com
+
+DHAN: 9740022956
+Profit2025@
+API Key : bf2b791a
+Access Token : eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzYzMjAyMTE0LCJpYXQiOjE3NjMxMTU3MTQsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA1MjYyMDc1In0.kk-qPvKxPxdMRsotuYu7DOh61ndPkIAUoWDNsT1z_ERlND4crcxqFVySEIQWR4mwfT0aXwIOk3Z6i2itga3rcA
+
+Telegram Token : 8589661497:AAHkKYPlDBk63psDqtGIbAJXB7QmObGscm8
+Chat Id : 726033937
+
+https://api.telegram.org/bot8589661497:AAHkKYPlDBk63psDqtGIbAJXB7QmObGscm8/getUpdates
+
+{
+  "signal": "Smart Buy",
+  "secret": "mageshtv2025"
+  "symbol": ""{{ticker}}"",
+  "spot": {{close}},
+  "alert_id": "{{id}}"
+}
+
+ngrok config add-authtoken 35gn8PAZNCYU56mlNRXUG8jSSoT_3jSUj2aXzWYVWA4EF3WHw
+https://nongranular-uncavernous-hannelore.ngrok-free.dev
+ngrok http 5000
+
+docker image ls 
+docker image rm tradingviewalgo-server
+docker system prune -f
+
+docker stop TradingViewAlgo
+docker rm TradingViewAlgo
+
+docker-compose up -d --build
+
+
+for /f "tokens=*" %i in ('docker ps -aq') do docker stop %i & docker rm %i
+for /f "tokens=*" %i in ('docker images -aq') do docker rmi -f %i
+docker-compose up -d --build
+
+
+
