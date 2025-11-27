@@ -1,0 +1,23 @@
+Open Trading view, Dhan, Docker desktop
+In Dhan click on profile and click "Access Dhan HQ APIs"
+Delet the old access token and Generate new access token
+Copy the access token, Go to .env file in notepad++ and replace the token(DHAN_ACCESS_TOKEN=)
+Change the expiry code as required (EXPIRY_CODE) 0 for current/near expiry, 1 for next expiry and 2 for far expiry
+Open cmd prompt and copy paste below commands
+
+for /f "tokens=*" %i in ('docker ps -aq') do docker stop %i & docker rm %i
+for /f "tokens=*" %i in ('docker images -aq') do docker rmi -f %i
+
+Double click on Start server bat file on desktop
+Open The MAG google chrome & clicl on Talend API Teaster 
+Check Getallorder request and click on send (We should see 200 & Success response)
+
+If need to Stop
+Go to docker desktop- Click on containers(left top)
+Click on stop button( Right side click on first stop button ( tradingviewalgo)
+Also stop Trading view alerts
+
+To pause or override
+stop Trading view alerts
+
+
