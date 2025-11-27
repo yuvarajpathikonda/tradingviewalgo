@@ -23,10 +23,6 @@ INSTRUMENTS_CSV_URL = os.environ.get(
 )
 INSTRUMENTS_LOCAL = os.environ.get("INSTRUMENTS_LOCAL", "dhan_instruments_detailed.csv")
 STRIKE_STEP_DEFAULT = int(os.environ.get("STRIKE_STEP_DEFAULT", "50"))
-ORDER_PRODUCT_TYPE = os.environ.get("ORDER_PRODUCT_TYPE", "INTRADAY")
-ORDER_ORDER_TYPE = os.environ.get("ORDER_ORDER_TYPE", "MARKET")
-MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
-RETRY_BACKOFF = float(os.environ.get("RETRY_BACKOFF", "0.8"))
 STATE_FILE = os.environ.get("STATE_FILE", "tv_bridge_state.json")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8589661497:AAHkKYPlDBk63psDqtGIbAJXB7QmObGscm8")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "726033937")
@@ -154,7 +150,7 @@ def compute_itm1_strike(spot: float, step: int, intent: str):
         return floor if intent == "CE" else ceil
 
 def quantity_for_instrument_row(row: Dict[str, Any], lots: int = 1):
-    for k in ("lot_size", "lotSize", "LOT_SIZE", "LotSize", "lot"):
+    for k in "LOT_SIZE":
         if row.get(k):
             try:
                 return int(row[k]) * lots
@@ -217,7 +213,7 @@ async def webhook(request: Request):
                                              transaction_type=dhan.SELL,
                                              quantity=75,
                                              order_type=dhan.MARKET,
-                                             product_type=dhan.INTRA,
+                                             product_type=dhan.MARGIN,
                                              price=0)
                 log.debug("Closed leg %s -> order: %s", leg, sellorder)
                 notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('expiry')}: {sellorder}")
@@ -238,11 +234,11 @@ async def webhook(request: Request):
             order = dhan.place_order(security_id=sid,
                                      exchange_segment=dhan.NSE_FNO,
                                      transaction_type=dhan.BUY,
-                                     quantity=75,
+                                     quantity=int(qty),
                                      order_type=dhan.MARKET,
-                                     product_type=dhan.INTRA,
+                                     product_type=dhan.MARGIN,
                                      price=0)
-            new_leg = {"type": option_type, "strike": int(strike), "expiry": str(expiry), "security_id": sid, "quantity": qty, "order": order}
+            new_leg = {"type": option_type, "strike": int(strike), "expiry": str(expiry), "security_id": sid, "quantity":qty, "order": order}
             state["open_leg"] = new_leg
             save_state(state)
             notify_telegram(f"Opened {option_type} {strike} {expiry}: {order}")
