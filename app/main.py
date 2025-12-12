@@ -2,17 +2,23 @@ import os
 import csv
 import json
 import threading
+import traceback
 from datetime import datetime, date
 from functools import lru_cache
 from typing import Optional, Dict, Any
 
 import requests
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 
 from tvlogger import get_logger
 log = get_logger("main")
 from dhanhq import dhanhq
+from dotenv import load_dotenv
+# Load .env BEFORE anything else
+ENV_PATH = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(ENV_PATH)
+
 # ---------------------- CONFIG (use env vars in production) ----------------------
 DHAN_ACCESS_TOKEN = os.environ.get("DHAN_ACCESS_TOKEN")
 DHAN_CLIENT_ID = os.environ.get("DHAN_CLIENT_ID")
@@ -171,6 +177,9 @@ def notify_telegram(message: str):
 # ------------------------ Webhook endpoint ------------------------------------
 @app.post("/webhook")
 async def webhook(request: Request):
+    DHAN_ACCESS_TOKEN = os.environ.get("DHAN_ACCESS_TOKEN")
+    DHAN_CLIENT_ID = os.environ.get("DHAN_CLIENT_ID")
+    dhan = dhanhq(DHAN_CLIENT_ID,DHAN_ACCESS_TOKEN)
     body = await request.json()
     log.debug("Webhook payload: %s", body)
     tv_secret = body.get("secret", "")
@@ -206,7 +215,7 @@ async def webhook(request: Request):
         def close_leg(leg):
             try:
                 sid = leg["security_id"]
-                qty = leg.get("quantity", 1)
+                qty = leg.get("quantity",75)
                 log.debug("place_order_on_dhan with sid : %s , type : SELL, quantity: %s", sid, qty)
                 sellorder = dhan.place_order(security_id=sid,
                                              exchange_segment=dhan.NSE_FNO,
@@ -234,7 +243,7 @@ async def webhook(request: Request):
             order = dhan.place_order(security_id=sid,
                                      exchange_segment=dhan.NSE_FNO,
                                      transaction_type=dhan.BUY,
-                                     quantity=int(qty),
+                                     quantity=75,
                                      order_type=dhan.MARKET,
                                      product_type=dhan.MARGIN,
                                      price=0)
@@ -284,27 +293,27 @@ async def webhook(request: Request):
 
 NGROK_API = "http://ngrok:4040/api/tunnels"
 
-@app.get("/order/{order_id}")
-def get_order(order_id: str):
+@app.get("/api/test-dhan")
+def test_dhan_connection():
     try:
-        order_details = dhan.get_order_by_id(order_id)
-        if not order_details:
-            raise HTTPException(status_code=404, detail="Order not found")
-        return order_details
-    except Exception as e:
-        # catch HTTP / library / JSON errors
-        raise HTTPException(status_code=500, detail=f"Error fetching order: {e}")
+        DHAN_ACCESS_TOKEN = os.environ.get("DHAN_ACCESS_TOKEN")
+        DHAN_CLIENT_ID = os.environ.get("DHAN_CLIENT_ID")
+        dhan = dhanhq(DHAN_CLIENT_ID,DHAN_ACCESS_TOKEN)
+        # Try a simple API call such as getting fund limits or order list.
+        res = dhan.get_order_list()
 
-@app.get("/getallorder")
-def get_order():
-    try:
-        order_details = dhan.get_order_list()
-        if not order_details:
-            raise HTTPException(status_code=404, detail="Order not found")
-        return order_details
+        return {
+            "status": "success",
+            "message": "DHAN connection successful!",
+            "details": res
+        }
+
     except Exception as e:
-        # catch HTTP / library / JSON errors
-        raise HTTPException(status_code=500, detail=f"Error fetching order: {e}")
+        return {
+            "status": "error",
+            "message": "DHAN connection failed!",
+            "error": str(e)
+        }
 
 @app.get("/get-ngrok-url")
 def get_ngrok_url():
@@ -335,7 +344,160 @@ async def health():
 async def startup_event():
     log.info("Application is starting")
     load_instruments()
+#----------------------------UI changes-------------------------------
+@app.get("/api/token")
+def read_dhan_token():
+    token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+    return {"token": token}
 
+@app.post("/api/token/update")
+async def update_dhan_token(request: Request):
+    try:
+        
+        form = await request.form()
+        new_token = form.get("token")
+
+        if not new_token:
+            return JSONResponse({"error": "Token cannot be empty"}, status_code=400)
+
+        update_env_variable("DHAN_ACCESS_TOKEN", new_token)
+
+        # Update running environment also
+        os.environ["DHAN_ACCESS_TOKEN"] = new_token
+        load_dotenv(override=True)
+        return RedirectResponse("/settings", status_code=303)
+    except Exception as e:
+        print("\n======= ERROR IN UPDATE TOKEN =======")
+        traceback.print_exc()
+        print("=====================================\n")
+        raise
+def update_env_variable(key: str, value: str):
+    """Updates or adds a key=value pair inside the .env file."""
+    lines = []
+    found = False
+
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH, "r") as f:
+            lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.startswith(key + "="):
+            new_lines.append(f"{key}={value}\n")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        new_lines.append(f"{key}={value}\n")
+
+    with open(ENV_PATH, "w") as f:
+        f.writelines(new_lines)
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page():
+    token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+
+    # DO NOT USE f-string. Use plain triple quotes.
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>DHAN Token Manager</title>
+
+        <link rel="stylesheet"
+              href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    </head>
+
+    <body class="bg-light">
+        <div class="container mt-5">
+            <div class="card shadow p-4">
+                <h2 class="mb-4">DHAN Access Token Manager</h2>
+
+                <!-- Current Token -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Current Token:</label>
+                    <textarea class="form-control" rows="3" readonly>__TOKEN__</textarea>
+                </div>
+
+                <!-- Update Form -->
+                <form action="/api/token/update" method="POST">
+                    <label class="form-label fw-bold">Update Token:</label>
+                    <textarea name="token" class="form-control" rows="3"
+                              placeholder="Enter new DHAN access token" required></textarea>
+
+                    <button class="btn btn-primary mt-3" type="submit">
+                        Update Token
+                    </button>
+                </form>
+
+                <hr class="my-4">
+
+                <!-- Test DHAN Button -->
+                <button class="btn btn-success" onclick="testDhan()">
+                    Test DHAN Connection
+                </button>
+                
+            </div>
+        </div>
+
+        <!-- Modal -->
+        <div class="modal fade" id="resultModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">DHAN Connection Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body" id="modalBody">Loading...</div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          function testDhan() {
+            fetch("/api/test-dhan")
+              .then(res => res.json())
+              .then(data => {
+                const modalBody = document.getElementById("modalBody");
+
+                if (data.status === "success") {
+                  modalBody.innerHTML = `
+                    <div class='alert alert-success'>
+                      <strong>${JSON.stringify(data.details, null, 2)}</strong>
+                    </div>
+                  `;
+                } else {
+                  modalBody.innerHTML = `
+                    <div class='alert alert-danger'>
+                      <strong>Failed!</strong> ${data.message}<br>
+                      Error: ${data.error}
+                    </div>
+                  `;
+                }
+
+                const modal = new bootstrap.Modal(document.getElementById("resultModal"));
+                modal.show();
+              });
+          }
+          
+        </script>
+
+    </body>
+    </html>
+    """
+
+    # Insert the token safely
+    html = html.replace("__TOKEN__", token)
+
+    return HTMLResponse(content=html)
+
+# ------------------------ Main entry point ------------------------------------
 if __name__ == "__main__":
     import uvicorn
     try:
@@ -345,6 +507,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
-        reload=False
+        port=int(os.environ.get("PORT", 8080)),
+        reload=True
     )

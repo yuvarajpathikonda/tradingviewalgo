@@ -41,12 +41,9 @@ docker push mageshtv2025/tradingviewalgorepo:ngrok-latest
 docker pull mageshtv2025/tradingviewalgorepo:ngrok-latest
 docker pull mageshtv2025/tradingviewalgorepo:server-latest
 
-docker run -d -e NGROK_AUTHTOKEN=35gn8PAZNCYU56mlNRXUG8jSSoT_3jSUj2aXzWYVWA4EF3WHw -p 4040:4040 -p 8000:8000 mageshtv2025/tradingviewalgorepo:ngrok-latest ngrok http 8000
-
-
 for /f "tokens=*" %i in ('docker ps -aq') do docker stop %i & docker rm %i
 for /f "tokens=*" %i in ('docker images -aq') do docker rmi -f %i
 
 
 
-dynamic values for expiry,lots and implement at the money concept, in the money and Out of the money concept (1,2,3)
+

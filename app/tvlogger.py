@@ -21,7 +21,11 @@ def get_logger(name: str = "tv-algo"):
 
     if logger.handlers:
         return logger  # Avoid adding handlers twice
-    log_level = os.getenv("LOG_LEVEL").upper()
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    if log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+        log_level = "INFO"
+
     logger.setLevel(log_level)
 
     log_path = os.path.join(LOG_DIR, LOG_FILE)

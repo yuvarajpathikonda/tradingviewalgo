@@ -9,7 +9,6 @@ REM Give Docker a few seconds to start ngrok
 timeout /t 5 /nobreak >nul
 
 REM Optional: open FastAPI root in browser
-start https://nongranular-uncavernous-hannelore.ngrok-free.dev/health
 
-start https://nongranular-uncavernous-hannelore.ngrok-free.dev/getallorder
+start https://nongranular-uncavernous-hannelore.ngrok-free.dev/settings
 
