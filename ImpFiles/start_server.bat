@@ -1,6 +1,6 @@
 @echo on
 REM Navigate to project folder
-cd /d "D:/TradingViewAlgo"
+cd /d "E:/tradingviewalgo"
 
 REM Build and run Docker containers
 docker compose up -d --force-recreate
@@ -11,4 +11,5 @@ timeout /t 5 /nobreak >nul
 REM Optional: open FastAPI root in browser
 start https://nongranular-uncavernous-hannelore.ngrok-free.dev/health
 
-pause
+start https://nongranular-uncavernous-hannelore.ngrok-free.dev/getallorder
+
