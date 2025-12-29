@@ -239,6 +239,7 @@ async def webhook(request: Request):
     spot = body.get("spot")
     alert_id = body.get("alert_id") or body.get("id") or None
     EXPIRY_INDEX = int(os.environ.get("EXPIRY_INDEX", "0"))
+    lots = int(os.environ.get("LOTS", "1"))
     CE_STRIKE_TYPE = os.environ.get("CE_STRIKE_TYPE", "ITM1")
     PE_STRIKE_TYPE = os.environ.get("PE_STRIKE_TYPE", "ITM1")
     STRIKE_STEP_DEFAULT = int(os.environ.get("STRIKE_STEP"))
@@ -277,7 +278,7 @@ async def webhook(request: Request):
                 #                              product_type=dhan.MARGIN,
                 #                              price=0)
                 log.debug("Closed leg %s -> order: %s", leg, sellorder)
-                notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('strike_type')} {leg.get('expiry')}: {sellorder}")
+                notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('strike_type')} {leg.get('expiry')} {leg.get('quantity')}: {sellorder}")
                 return sellorder
             except Exception:
                 log.exception("Failed to close leg")
@@ -297,7 +298,7 @@ async def webhook(request: Request):
             if not row:
                 raise RuntimeError(f"Instrument not found for {symbol} {option_type} strike {strike} exp {expiry}")
             sid = row.get("SECURITY_ID")
-            qty = quantity_for_instrument_row(row, lots=1)
+            qty = quantity_for_instrument_row(row, lots=lots)
             log.debug("place_order_on_dhan with sid : %s , type : BUY, quantity: %s", sid, qty)
             # order = dhan.place_order(security_id=sid,
             #                          exchange_segment=dhan.NSE_FNO,
@@ -310,7 +311,7 @@ async def webhook(request: Request):
             new_leg = {"type": option_type, "strike": int(strike), "strike_type": strike_type, "expiry": str(expiry), "security_id": sid, "quantity": qty, "order": order}
             state["open_leg"] = new_leg
             save_state(state)
-            notify_telegram(f"Opened {option_type} {strike} {strike_type} {expiry}: {order}")
+            notify_telegram(f"Opened {option_type} {strike} {strike_type} {expiry} {qty}: {order}")
             log.debug("Opened leg: %s", new_leg)
             return new_leg
 
@@ -446,7 +447,7 @@ async def update_dhan_token(request: Request):
 
         update_env_variable("STRIKE_STEP", strike_step)
         os.environ["STRIKE_STEP"] = strike_step
-        lots = form.get("lots", "1")
+        lots = form.get("lots")
         if not lots.isdigit() or int(lots) <= 0:
             return JSONResponse(
                 {"error": "Invalid lots value"},
@@ -457,7 +458,7 @@ async def update_dhan_token(request: Request):
         # Update running environment also
         os.environ["DHAN_ACCESS_TOKEN"] = new_token
         load_dotenv(override=True)
-        return RedirectResponse("/settings", status_code=303)
+        return RedirectResponse("/settings?status=success", status_code=303)
     except Exception as e:
         print("\n======= ERROR IN UPDATE TOKEN =======")
         traceback.print_exc()
@@ -487,13 +488,14 @@ def update_env_variable(key: str, value: str):
         f.writelines(new_lines)
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page():
+def settings_page(request: Request):
     token = os.environ.get("DHAN_ACCESS_TOKEN", "")
     expiry_index = os.environ.get("EXPIRY_INDEX", "0")
     lots = os.environ.get("LOTS")
     ce_strike_type = os.environ.get("CE_STRIKE_TYPE", "ITM1")
     pe_strike_type = os.environ.get("PE_STRIKE_TYPE", "ITM1")
     strike_step = os.environ.get("STRIKE_STEP", "50")
+    status = request.query_params.get("status")
 
 
 
@@ -502,7 +504,7 @@ def settings_page():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>DHAN Token Manager</title>
+        <title>Trading View Manager</title>
 
         <link rel="stylesheet"
               href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
@@ -513,8 +515,8 @@ def settings_page():
     <body class="bg-light">
         <div class="container mt-5">
             <div class="card shadow p-4">
-                <h2 class="text-center mb-4">Trading View Algo Settings</h2>
-
+                <h2 class="text-center mb-4">Trading View Algo Settings-Somi</h2>
+                __ALERT__
                 <!-- Current Token -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">Current Token:</label>
@@ -684,13 +686,23 @@ def settings_page():
     </body>
     </html>
     """
+    alert_html = ""
+
+    if status == "success":
+        alert_html = """
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            ✅ Settings updated successfully!
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        """
+    html = html.replace("__ALERT__", alert_html)
 
     # Insert the token safely
     html = html.replace("__TOKEN__", token)
     html = html.replace("__LOTS__", lots)
-    html = html.replace("__EXP0__", "selected" if expiry_index == "0" else "")
-    html = html.replace("__EXP1__", "selected" if expiry_index == "1" else "")
-    html = html.replace("__EXP2__", "selected" if expiry_index == "2" else "")
+    html = html.replace("__EXP0__", "checked" if expiry_index == "0" else "")
+    html = html.replace("__EXP1__", "checked" if expiry_index == "1" else "")
+    html = html.replace("__EXP2__", "checked" if expiry_index == "2" else "")
     for v in ["ITM1", "ITM2", "ATM", "OTM1", "OTM2"]:
         html = html.replace(f"__CE_{v}__", "selected" if ce_strike_type == v else "")
         html = html.replace(f"__PE_{v}__", "selected" if pe_strike_type == v else "")
