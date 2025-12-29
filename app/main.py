@@ -6,6 +6,7 @@ import traceback
 from datetime import datetime, date
 from functools import lru_cache
 from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
 
 import requests
 from fastapi import FastAPI, Request, HTTPException
@@ -28,14 +29,19 @@ INSTRUMENTS_CSV_URL = os.environ.get(
     "https://images.dhan.co/api-data/api-scrip-master-detailed.csv"
 )
 INSTRUMENTS_LOCAL = os.environ.get("INSTRUMENTS_LOCAL", "dhan_instruments_detailed.csv")
-STRIKE_STEP_DEFAULT = int(os.environ.get("STRIKE_STEP_DEFAULT", "50"))
+STRIKE_STEP_DEFAULT = int(os.environ.get("STRIKE_STEP"))
 STATE_FILE = os.environ.get("STATE_FILE", "tv_bridge_state.json")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8589661497:AAHkKYPlDBk63psDqtGIbAJXB7QmObGscm8")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "726033937")
-DEBUG = str(os.environ.get("DEBUG", "false")).lower() in ("1", "true", "yes")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 # --------------------------------------------------------------------------------
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    log.info("Application is starting")
+    load_instruments()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 lock = threading.Lock()
 
 # ------------------------ Symbol normalization -------------------
@@ -97,28 +103,30 @@ def parse_date_try(s: Optional[str]) -> Optional[date]:
             continue
     return None
 
-def get_nearest_expiry_for_underlying(underlying="NIFTY"):
+def get_nearest_expiry_for_underlying(underlying, n: int = 0):
     rows = load_instruments()
     today = datetime.utcnow().date()
     expiries = set()
     for r in rows:
         ts = (r.get("UNDERLYING_SYMBOL")).upper()
-        if underlying.upper() not in ts:
+        if underlying.upper() != ts:
             continue
         exp = parse_date_try(r.get("SM_EXPIRY_DATE"))
         if exp and exp >= today:
             expiries.add(exp)
     if not expiries:
         return None
-    return min(expiries)
+    
+    sorted_expiries = sorted(expiries)
+    return sorted_expiries[n]
 
 def find_option_row(underlying="NIFTY", expiry: date = None, strike: int = None, option_type: str = "CE"):
     rows = load_instruments()
     for r in rows:
         ts = (r.get("UNDERLYING_SYMBOL")).upper()
-        if underlying.upper() not in ts:
+        if underlying.upper() != ts:
             continue
-        if option_type.upper() not in ts and (r.get("OPTION_TYPE") or "").upper() != option_type.upper():
+        if option_type.upper() != ts and (r.get("OPTION_TYPE") or "").upper() != option_type.upper():
             continue
         r_strike = r.get("STRIKE_PRICE")
         try:
@@ -145,24 +153,12 @@ def save_state(state):
         json.dump(state, f, indent=2, default=str)
 
 # ------------------------ Trading logic --------------------------------------
-def compute_itm1_strike(spot: float, step: int, intent: str):
-    spot = float(spot)
-    step = int(step)
-    floor = (int(spot) // step) * step
-    ceil = floor if floor == int(spot) else floor + step
-    if int(spot) == floor:
-        return floor - step if intent == "CE" else floor + step
-    else:
-        return floor if intent == "CE" else ceil
-
 def quantity_for_instrument_row(row: Dict[str, Any], lots: int = 1):
-    for k in "LOT_SIZE":
-        if row.get(k):
-            try:
-                return int(row[k]) * lots
-            except Exception:
-                pass
-    return int(lots)
+    if lots is None:
+        lots = int(os.environ.get("LOTS", "1"))
+        
+    lot_size = int(float(row.get("LOT_SIZE")))
+    return lot_size * lots
 
 def notify_telegram(message: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -173,6 +169,57 @@ def notify_telegram(message: str):
         requests.post(url, data=data, timeout=5)
     except Exception:
         log.exception("Telegram notify failed")
+
+def compute_atm_strike(spot: float, step: int) -> int:
+    spot = float(spot)
+    step = int(step)
+    return round(spot / step) * step
+
+
+def _direction(intent: str) -> int:
+    intent = intent.upper()
+    if intent == "CE":
+        return 1
+    elif intent == "PE":
+        return -1
+    else:
+        raise ValueError("intent must be 'CE' or 'PE'")
+
+
+def compute_itm_strike(spot: float, step: int, intent: str, depth: int) -> int:
+    atm = compute_atm_strike(spot, step)
+    d = _direction(intent)
+    return atm - (d * step * depth)
+
+def compute_otm_strike(spot: float, step: int, intent: str, depth: int) -> int:
+    atm = compute_atm_strike(spot, step)
+    d = _direction(intent)
+    return atm + (d * step * depth)
+
+def compute_strike_by_type(
+    spot: float,
+    step: int,
+    intent: str,
+    strike_type: str
+) -> int:
+    strike_type = strike_type.upper()
+
+    if strike_type == "ATM":
+        return compute_atm_strike(spot, step)
+
+    if strike_type == "ITM1":
+        return compute_itm_strike(spot, step, intent,1)
+
+    if strike_type == "ITM2":
+        return compute_itm_strike(spot, step, intent,2)
+
+    if strike_type == "OTM1":
+        return compute_otm_strike(spot, step, intent,1)
+
+    if strike_type == "OTM2":
+        return compute_otm_strike(spot, step, intent,2)
+
+    raise ValueError(f"Invalid strike type: {strike_type}")
 
 # ------------------------ Webhook endpoint ------------------------------------
 @app.post("/webhook")
@@ -187,10 +234,15 @@ async def webhook(request: Request):
         log.warning("Invalid TV secret in payload")
         raise HTTPException(status_code=403, detail="invalid secret")
     signal = (body.get("signal")).strip()
-    incoming_symbol = (body.get("symbol") or "NIFTY")
+    incoming_symbol = (body.get("symbol"))
     symbol = normalize_symbol(incoming_symbol)
     spot = body.get("spot")
     alert_id = body.get("alert_id") or body.get("id") or None
+    EXPIRY_INDEX = int(os.environ.get("EXPIRY_INDEX", "0"))
+    lots = int(os.environ.get("LOTS", "1"))
+    CE_STRIKE_TYPE = os.environ.get("CE_STRIKE_TYPE", "ITM1")
+    PE_STRIKE_TYPE = os.environ.get("PE_STRIKE_TYPE", "ITM1")
+    STRIKE_STEP_DEFAULT = int(os.environ.get("STRIKE_STEP"))
     if not signal or spot is None:
         return JSONResponse({"error": "missing signal or spot"}, status_code=400)
     with lock:
@@ -202,7 +254,7 @@ async def webhook(request: Request):
         spot = float(spot)
     except:
         return JSONResponse({"error": "invalid spot value"}, status_code=400)
-    expiry = get_nearest_expiry_for_underlying(symbol)
+    expiry = get_nearest_expiry_for_underlying(symbol,EXPIRY_INDEX)
     if not expiry:
         return JSONResponse({"error": "no expiry found for underlying", "symbol_checked": symbol, "incoming_symbol": incoming_symbol}, status_code=500)
     strike_step = STRIKE_STEP_DEFAULT
@@ -215,17 +267,18 @@ async def webhook(request: Request):
         def close_leg(leg):
             try:
                 sid = leg["security_id"]
-                qty = leg.get("quantity",75)
+                qty = leg.get("quantity")
                 log.debug("place_order_on_dhan with sid : %s , type : SELL, quantity: %s", sid, qty)
-                sellorder = dhan.place_order(security_id=sid,
-                                             exchange_segment=dhan.NSE_FNO,
-                                             transaction_type=dhan.SELL,
-                                             quantity=75,
-                                             order_type=dhan.MARKET,
-                                             product_type=dhan.MARGIN,
-                                             price=0)
+                sellorder = "123456"
+                # sellorder = dhan.place_order(security_id=sid,
+                #                              exchange_segment=dhan.NSE_FNO,
+                #                              transaction_type=dhan.SELL,
+                #                              quantity=qty,
+                #                              order_type=dhan.MARKET,
+                #                              product_type=dhan.MARGIN,
+                #                              price=0)
                 log.debug("Closed leg %s -> order: %s", leg, sellorder)
-                notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('expiry')}: {sellorder}")
+                notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('strike_type')} {leg.get('expiry')} {leg.get('quantity')}: {sellorder}")
                 return sellorder
             except Exception:
                 log.exception("Failed to close leg")
@@ -233,24 +286,32 @@ async def webhook(request: Request):
                 raise
 
         def open_leg_buy(option_type):
-            strike = compute_itm1_strike(spot, strike_step, option_type)
+            strike_type = CE_STRIKE_TYPE if option_type == "CE" else PE_STRIKE_TYPE
+
+            strike = compute_strike_by_type(
+                spot=spot,
+                step=strike_step,
+                intent=option_type,
+                strike_type=strike_type
+            )
             row = find_option_row(underlying=symbol, expiry=expiry, strike=strike, option_type=option_type)
             if not row:
                 raise RuntimeError(f"Instrument not found for {symbol} {option_type} strike {strike} exp {expiry}")
             sid = row.get("SECURITY_ID")
-            qty = quantity_for_instrument_row(row, lots=1)
+            qty = quantity_for_instrument_row(row, lots=lots)
             log.debug("place_order_on_dhan with sid : %s , type : BUY, quantity: %s", sid, qty)
-            order = dhan.place_order(security_id=sid,
-                                     exchange_segment=dhan.NSE_FNO,
-                                     transaction_type=dhan.BUY,
-                                     quantity=75,
-                                     order_type=dhan.MARKET,
-                                     product_type=dhan.MARGIN,
-                                     price=0)
-            new_leg = {"type": option_type, "strike": int(strike), "expiry": str(expiry), "security_id": sid, "quantity":qty, "order": order}
+            # order = dhan.place_order(security_id=sid,
+            #                          exchange_segment=dhan.NSE_FNO,
+            #                          transaction_type=dhan.BUY,
+            #                          quantity=qty,
+            #                          order_type=dhan.MARKET,
+            #                          product_type=dhan.MARGIN,
+            #                          price=0)
+            order = "654321"
+            new_leg = {"type": option_type, "strike": int(strike), "strike_type": strike_type, "expiry": str(expiry), "security_id": sid, "quantity": qty, "order": order}
             state["open_leg"] = new_leg
             save_state(state)
-            notify_telegram(f"Opened {option_type} {strike} {expiry}: {order}")
+            notify_telegram(f"Opened {option_type} {strike} {strike_type} {expiry} {qty}: {order}")
             log.debug("Opened leg: %s", new_leg)
             return new_leg
 
@@ -338,12 +399,8 @@ def get_ngrok_url():
 # ------------------------ Health check --------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "time": str(datetime.utcnow())}
+    return {"status": "Somi server is up", "time": str(datetime.utcnow())}
 
-@app.on_event("startup")
-async def startup_event():
-    log.info("Application is starting")
-    load_instruments()
 #----------------------------UI changes-------------------------------
 @app.get("/api/token")
 def read_dhan_token():
@@ -356,16 +413,52 @@ async def update_dhan_token(request: Request):
         
         form = await request.form()
         new_token = form.get("token")
+        expiry_index = form.get("expiry_index", "0")
 
         if not new_token:
             return JSONResponse({"error": "Token cannot be empty"}, status_code=400)
+        if expiry_index not in ("0", "1", "2"):
+            return JSONResponse(
+                {"error": "Expiry index must be 0, 1 or 2"},
+                status_code=400
+            )
+        if new_token:
+            update_env_variable("DHAN_ACCESS_TOKEN", new_token)
+            os.environ["DHAN_ACCESS_TOKEN"] = new_token
 
-        update_env_variable("DHAN_ACCESS_TOKEN", new_token)
+        update_env_variable("EXPIRY_INDEX", expiry_index)
+        os.environ["EXPIRY_INDEX"] = expiry_index
+        
+        ce_strike_type = form.get("ce_strike_type")
+        pe_strike_type = form.get("pe_strike_type")
 
+        update_env_variable("CE_STRIKE_TYPE", ce_strike_type)
+        update_env_variable("PE_STRIKE_TYPE", pe_strike_type)
+
+        os.environ["CE_STRIKE_TYPE"] = ce_strike_type
+        os.environ["PE_STRIKE_TYPE"] = pe_strike_type
+        strike_step = form.get("strike_step", "50")
+
+        if not strike_step.isdigit() or int(strike_step) <= 0:
+            return JSONResponse(
+                {"error": "Invalid strike step"},
+                status_code=400
+            )
+
+        update_env_variable("STRIKE_STEP", strike_step)
+        os.environ["STRIKE_STEP"] = strike_step
+        lots = form.get("lots")
+        if not lots.isdigit() or int(lots) <= 0:
+            return JSONResponse(
+                {"error": "Invalid lots value"},
+                status_code=400
+            )
+        update_env_variable("LOTS", lots)
+        os.environ["LOTS"] = lots  
         # Update running environment also
         os.environ["DHAN_ACCESS_TOKEN"] = new_token
         load_dotenv(override=True)
-        return RedirectResponse("/settings", status_code=303)
+        return RedirectResponse("/settings?status=success", status_code=303)
     except Exception as e:
         print("\n======= ERROR IN UPDATE TOKEN =======")
         traceback.print_exc()
@@ -395,15 +488,23 @@ def update_env_variable(key: str, value: str):
         f.writelines(new_lines)
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page():
+def settings_page(request: Request):
     token = os.environ.get("DHAN_ACCESS_TOKEN", "")
+    expiry_index = os.environ.get("EXPIRY_INDEX", "0")
+    lots = os.environ.get("LOTS")
+    ce_strike_type = os.environ.get("CE_STRIKE_TYPE", "ITM1")
+    pe_strike_type = os.environ.get("PE_STRIKE_TYPE", "ITM1")
+    strike_step = os.environ.get("STRIKE_STEP", "50")
+    status = request.query_params.get("status")
+
+
 
     # DO NOT USE f-string. Use plain triple quotes.
     html = """
     <!DOCTYPE html>
     <html>
     <head>
-        <title>DHAN Token Manager</title>
+        <title>Trading View Manager</title>
 
         <link rel="stylesheet"
               href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
@@ -414,8 +515,8 @@ def settings_page():
     <body class="bg-light">
         <div class="container mt-5">
             <div class="card shadow p-4">
-                <h2 class="mb-4">DHAN Access Token Manager</h2>
-
+                <h2 class="text-center mb-4">Trading View Algo Settings-Somi</h2>
+                __ALERT__
                 <!-- Current Token -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">Current Token:</label>
@@ -428,18 +529,112 @@ def settings_page():
                     <textarea name="token" class="form-control" rows="3"
                               placeholder="Enter new DHAN access token" required></textarea>
 
-                    <button class="btn btn-primary mt-3" type="submit">
-                        Update Token
-                    </button>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold d-block">
+                            Expiry Index:
+                        </label>
+
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                    type="radio"
+                                    name="expiry_index"
+                                    value="0"
+                                    id="exp0"
+                                    __EXP0__>
+                                <label class="form-check-label" for="exp0">
+                                    0 – Near
+                                </label>
+                            </div>
+
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                    type="radio"
+                                    name="expiry_index"
+                                    value="1"
+                                    id="exp1"
+                                    __EXP1__>
+                                <label class="form-check-label" for="exp1">
+                                    1 – Next
+                                </label>
+                            </div>
+
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                    type="radio"
+                                    name="expiry_index"
+                                    value="2"
+                                    id="exp2"
+                                    __EXP2__>
+                                <label class="form-check-label" for="exp2">
+                                    2 – Far
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Strike Step</label>
+                        <input
+                            type="number"
+                            name="strike_step"
+                            class="form-control"
+                            min="25"
+                            max="500"
+                            step="25"
+                            value="__STRIKE_STEP__"
+                            required
+                        >
+                        <small class="text-muted">
+                            NIFTY: 50 | BANKNIFTY: 100 | FINNIFTY: 50
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Lots:</label>
+                        <input type="number"
+                            min="1"
+                            max="50"
+                            name="lots"
+                            class="form-control"
+                            value="__LOTS__"
+                            required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">CE Strike Type</label>
+                            <select name="ce_strike_type" class="form-select">
+                            <option value="ITM1" __CE_ITM1__>ITM1</option>
+                            <option value="ITM2" __CE_ITM2__>ITM2</option>
+                            <option value="ATM"  __CE_ATM__>ATM</option>
+                            <option value="OTM1" __CE_OTM1__>OTM1</option>
+                            <option value="OTM2" __CE_OTM2__>OTM2</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">PE Strike Type</label>
+                            <select name="pe_strike_type" class="form-select">
+                            <option value="ITM1" __PE_ITM1__>ITM1</option>
+                            <option value="ITM2" __PE_ITM2__>ITM2</option>
+                            <option value="ATM"  __PE_ATM__>ATM</option>
+                            <option value="OTM1" __PE_OTM1__>OTM1</option>
+                            <option value="OTM2" __PE_OTM2__>OTM2</option>
+                            </select>
+                        </div>
+                        </div>
+
+                        <div class="d-flex justify-content-center gap-3 my-4">
+                            <button class="btn btn-primary px-4" type="submit">
+                                Update Settings
+                            </button>
+                            <button type="button" class="btn btn-success" onclick="testDhan()">
+                                Test DHAN Connection
+                            </button>
+                        </div>
+
                 </form>
-
-                <hr class="my-4">
-
-                <!-- Test DHAN Button -->
-                <button class="btn btn-success" onclick="testDhan()">
-                    Test DHAN Connection
-                </button>
-                
+    
             </div>
         </div>
 
@@ -491,9 +686,27 @@ def settings_page():
     </body>
     </html>
     """
+    alert_html = ""
+
+    if status == "success":
+        alert_html = """
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            ✅ Settings updated successfully!
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        """
+    html = html.replace("__ALERT__", alert_html)
 
     # Insert the token safely
     html = html.replace("__TOKEN__", token)
+    html = html.replace("__LOTS__", lots)
+    html = html.replace("__EXP0__", "checked" if expiry_index == "0" else "")
+    html = html.replace("__EXP1__", "checked" if expiry_index == "1" else "")
+    html = html.replace("__EXP2__", "checked" if expiry_index == "2" else "")
+    for v in ["ITM1", "ITM2", "ATM", "OTM1", "OTM2"]:
+        html = html.replace(f"__CE_{v}__", "selected" if ce_strike_type == v else "")
+        html = html.replace(f"__PE_{v}__", "selected" if pe_strike_type == v else "")
+    html = html.replace("__STRIKE_STEP__", strike_step)
 
     return HTMLResponse(content=html)
 

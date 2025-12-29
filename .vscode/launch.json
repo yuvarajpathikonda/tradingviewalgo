@@ -5,11 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "FastAPI",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "module": "uvicorn",
+            "args": ["app.main:app", "--reload", "--host", "localhost", "--port", "8080"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
             "console": "integratedTerminal"
-        }
-    ]
+        }  ]
 }
