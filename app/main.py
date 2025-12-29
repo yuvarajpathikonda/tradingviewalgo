@@ -399,7 +399,7 @@ def get_ngrok_url():
 # ------------------------ Health check --------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "Somi server is up", "time": str(datetime.utcnow())}
+    return {"status": "Mahesh server is up", "time": str(datetime.utcnow())}
 
 #----------------------------UI changes-------------------------------
 @app.get("/api/token")
@@ -515,7 +515,7 @@ def settings_page(request: Request):
     <body class="bg-light">
         <div class="container mt-5">
             <div class="card shadow p-4">
-                <h2 class="text-center mb-4">Trading View Algo Settings-Somi</h2>
+                <h2 class="text-center mb-4">Trading View Algo Settings-Mahesh</h2>
                 __ALERT__
                 <!-- Current Token -->
                 <div class="mb-3">
