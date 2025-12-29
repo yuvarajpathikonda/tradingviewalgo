@@ -44,6 +44,6 @@ docker pull mageshtv2025/tradingviewalgorepo:server-latest
 for /f "tokens=*" %i in ('docker ps -aq') do docker stop %i & docker rm %i
 for /f "tokens=*" %i in ('docker images -aq') do docker rmi -f %i
 
-
-
-
+git pull
+git checkout mahesh_main
+git pull
