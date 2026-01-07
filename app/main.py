@@ -83,8 +83,17 @@ def download_instruments_csv(local_path=INSTRUMENTS_LOCAL):
 
 @lru_cache(maxsize=1)
 def load_instruments(local_path=INSTRUMENTS_LOCAL):
-    if not os.path.exists(local_path):
-        download_instruments_csv(local_path)
+    # Always delete old file
+    if os.path.exists(local_path):
+        try:
+            os.remove(local_path)
+            log.info("Deleted old instruments CSV: %s", local_path)
+        except Exception as e:
+            log.info("Failed to delete old CSV: %s", e)
+
+    # Always download fresh file
+    download_instruments_csv(local_path)
+
     rows = []
     with open(local_path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
