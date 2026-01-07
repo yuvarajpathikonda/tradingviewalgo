@@ -83,8 +83,17 @@ def download_instruments_csv(local_path=INSTRUMENTS_LOCAL):
 
 @lru_cache(maxsize=1)
 def load_instruments(local_path=INSTRUMENTS_LOCAL):
-    if not os.path.exists(local_path):
-        download_instruments_csv(local_path)
+    # Always delete old file
+    if os.path.exists(local_path):
+        try:
+            os.remove(local_path)
+            log.info("Deleted old instruments CSV: %s", local_path)
+        except Exception as e:
+            log.info("Failed to delete old CSV: %s", e)
+
+    # Always download fresh file
+    download_instruments_csv(local_path)
+
     rows = []
     with open(local_path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -270,13 +279,13 @@ async def webhook(request: Request):
                 qty = leg.get("quantity")
                 log.debug("place_order_on_dhan with sid : %s , type : SELL, quantity: %s", sid, qty)
                 sellorder = "123456"
-                # sellorder = dhan.place_order(security_id=sid,
-                #                              exchange_segment=dhan.NSE_FNO,
-                #                              transaction_type=dhan.SELL,
-                #                              quantity=qty,
-                #                              order_type=dhan.MARKET,
-                #                              product_type=dhan.MARGIN,
-                #                              price=0)
+                sellorder = dhan.place_order(security_id=sid,
+                                              exchange_segment=dhan.NSE_FNO,
+                                              transaction_type=dhan.SELL,
+                                              quantity=qty,
+                                              order_type=dhan.MARKET,
+                                              product_type=dhan.MARGIN,
+                                              price=0)
                 log.debug("Closed leg %s -> order: %s", leg, sellorder)
                 notify_telegram(f"Closed {leg.get('type')} {leg.get('strike')} {leg.get('strike_type')} {leg.get('expiry')} {leg.get('quantity')}: {sellorder}")
                 return sellorder
@@ -300,14 +309,13 @@ async def webhook(request: Request):
             sid = row.get("SECURITY_ID")
             qty = quantity_for_instrument_row(row, lots=lots)
             log.debug("place_order_on_dhan with sid : %s , type : BUY, quantity: %s", sid, qty)
-            # order = dhan.place_order(security_id=sid,
-            #                          exchange_segment=dhan.NSE_FNO,
-            #                          transaction_type=dhan.BUY,
-            #                          quantity=qty,
-            #                          order_type=dhan.MARKET,
-            #                          product_type=dhan.MARGIN,
-            #                          price=0)
-            order = "654321"
+            order = dhan.place_order(security_id=sid,
+                                      exchange_segment=dhan.NSE_FNO,
+                                      transaction_type=dhan.BUY,
+                                      quantity=qty,
+                                      order_type=dhan.MARKET,
+                                      product_type=dhan.MARGIN,
+                                      price=0)
             new_leg = {"type": option_type, "strike": int(strike), "strike_type": strike_type, "expiry": str(expiry), "security_id": sid, "quantity": qty, "order": order}
             state["open_leg"] = new_leg
             save_state(state)
