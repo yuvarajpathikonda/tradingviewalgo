@@ -6,16 +6,3 @@ services:
       - "8000:8000"
     env_file:
       - .env
-
-  ngrok:
-    image: ngrok/ngrok:latest        # <-- OFFICIAL, auto-updated
-    container_name: ngrok
-    depends_on:
-      - server
-    env_file:
-      - .env
-    command:
-      - http
-      - server:8000
-    ports:
-      - "4040:4040"
