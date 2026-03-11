@@ -1,4 +1,4 @@
-name: Deploy FastAPI to Oracle Cloud
+name: Stop Server
 
 on:
   workflow_dispatch:
