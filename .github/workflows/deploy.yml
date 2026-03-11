@@ -28,9 +28,6 @@ jobs:
         run: |
           echo $DEBUG_PASSWORD >> secrets.txt
   
-      - name: Run tmate
-        uses: mxschmitt/action-tmate@v2
-        
       - name: Deploy to Oracle Server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -39,7 +36,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script: |
-            pwd
+            cat secrets.txt
             echo ${{secrets.SERVER_IP}} | sed 's/./& /g'
             cd /home/ubuntu/tradingviewalgo
             git pull origin mahesh_main
