@@ -3,7 +3,7 @@ name: Deploy FastAPI to Oracle Cloud
 on:
   push:
     branches:
-      - main
+      - mahesh_main
 
 jobs:
   deploy:
