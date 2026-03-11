@@ -34,6 +34,7 @@ jobs:
           port: 22
           script: |
             pwd
+            echo ${{ secrets.SERVER_IP }}
             cd /home/ubuntu/tradingviewalgo
             git pull origin mahesh_main
             docker compose down
