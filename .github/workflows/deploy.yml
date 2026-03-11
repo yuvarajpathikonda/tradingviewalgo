@@ -14,31 +14,16 @@ jobs:
     - name: Build Docker Image
       run: docker build -t tradingview_algo .
 
-    - name: Save Docker Image
-      run: docker save tradingview_algo -o /tmp/image.tar
-
-    - name: Copy Image to OCI
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_IP }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "/tmp/image.tar"
-        target: "/home/ubuntu/"
-
-    - name: Deploy Container
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_IP }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
-          docker load -i /home/ubuntu/image.tar
-          docker stop tradingview_algo || true
-          docker rm tradingview_algo || true
+    - name: Deploy Docker Image Directly
+      run: |
+        docker save tradingview_algo | ssh -o StrictHostKeyChecking=no \
+          -i ${{ secrets.SERVER_SSH_KEY }} \
+          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker load && \
+          docker stop tradingview_algo || true && \
+          docker rm tradingview_algo || true && \
           docker run -d \
             --restart always \
             -p 8000:8000 \
             --env-file .env \
             --name tradingview_algo \
-            tradingview_algo
+            tradingview_algo"
