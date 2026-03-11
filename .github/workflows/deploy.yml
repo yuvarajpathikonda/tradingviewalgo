@@ -22,15 +22,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Print Server Host
+        run: echo "Server Host is ${{ secrets.SERVER_IP }}"
+
       - name: Deploy to Oracle Server
         uses: appleboy/ssh-action@v1.0.3
-
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
-
           script: |
             pwd
             cd /home/ubuntu/tradingviewalgo
