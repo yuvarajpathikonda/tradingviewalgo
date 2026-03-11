@@ -33,7 +33,7 @@ jobs:
 
           script: |
             pwd
-            cd /home/ubuntu/tradingviewalgo
+            cd /home/runner/work/tradingviewalgo
             git pull origin mahesh_main
             docker compose down
             docker compose up -d --build
