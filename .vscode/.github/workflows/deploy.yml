@@ -1,0 +1,45 @@
+name: Deploy TradingView Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build Docker Image
+      run: docker build -t tradingview_algo .
+
+    - name: Save Docker Image
+      run: docker save tradingview_algo -o image.tar
+
+    - name: Copy Image to OCI
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        source: "image.tar"
+        target: "/home/ubuntu/"
+
+    - name: Deploy Container
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          docker load -i image.tar
+          docker stop tradingview_algo || true
+          docker rm tradingview_algo || true
+          docker run -d \
+            --restart always \
+            -p 8000:8000 \
+            --env-file .env \
+            --name tradingview_algo \
+            tradingview_algo
