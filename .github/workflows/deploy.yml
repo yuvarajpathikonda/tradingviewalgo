@@ -19,7 +19,7 @@ jobs:
       with:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
         source: "."
         target: "/home/ubuntu/tradingviewalgo"
 
