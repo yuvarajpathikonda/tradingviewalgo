@@ -358,9 +358,6 @@ async def webhook(request: Request):
             notify_telegram(f"Error in webhook handling: {str(e)}")
             return JSONResponse({"error":"internal", "details": str(e)}), 500
 
-
-NGROK_API = "http://ngrok:4040/api/tunnels"
-
 @app.get("/api/test-dhan")
 def test_dhan_connection():
     try:
@@ -383,25 +380,6 @@ def test_dhan_connection():
             "error": str(e)
         }
 
-@app.get("/get-ngrok-url")
-def get_ngrok_url():
-    try:
-        # Call ngrok API
-        resp = requests.get(NGROK_API)
-        resp.raise_for_status()
-        tunnels = resp.json().get("tunnels", [])
-
-        if not tunnels:
-            log.warning("No ngrok tunnels found")
-            return {"error": "No ngrok tunnels available"}
-
-        public_url = tunnels[0]["public_url"]
-
-        return {"public_url": public_url}
-
-    except Exception as e:
-        log.exception("Failed to get NGROK URL: %s", e)
-        return {"error": str(e)}
 
 # ------------------------ Health check --------------------------------
 @app.get("/health")
