@@ -16,8 +16,13 @@ jobs:
 
     - name: Deploy Docker Image Directly
       run: |
+        # Write SSH key to a temp file
+        echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/id_rsa
+        chmod 600 /tmp/id_rsa
+
+        # Stream Docker image to server
         docker save tradingview_algo | ssh -o StrictHostKeyChecking=no \
-          -i ${{ secrets.SERVER_SSH_KEY }} \
+          -i /tmp/id_rsa \
           ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "docker load && \
           docker stop tradingview_algo || true && \
           docker rm tradingview_algo || true && \
