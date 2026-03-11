@@ -2,6 +2,7 @@ name: Deploy FastAPI to Oracle Cloud
 
 on:
   push:
+    workflow_dispatch:
     branches:
       - mahesh_main
 
