@@ -12,15 +12,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Copy files to Oracle Server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_IP }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "."
-        target: "/home/ubuntu/tradingviewalgo"
-
     - name: Deploy using docker-compose
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -30,4 +21,3 @@ jobs:
         script: |
           cd /home/ubuntu/tradingviewalgo
           docker compose down
-          docker compose up -d --build
