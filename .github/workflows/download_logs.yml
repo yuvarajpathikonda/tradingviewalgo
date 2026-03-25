@@ -1,10 +1,10 @@
-name: Download Docker Logs
+name: Download Logs and State File
 
 on:
   workflow_dispatch:
 
 jobs:
-  fetch-logs:
+  fetch-files:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,36 +15,45 @@ jobs:
         echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
 
-    - name: Generate logs on server
+    - name: Prepare files on server
       run: |
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
         ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-        
-        mkdir -p /home/ubuntu/logs
+
+        # Create bundle folder
+        mkdir -p /home/ubuntu/logs_bundle
+
+        # Collect docker logs
+        mkdir -p /home/ubuntu/logs_bundle/docker_logs
         docker ps --format "{{.Names}}" > /home/ubuntu/container_list.txt
 
         for c in $(cat /home/ubuntu/container_list.txt); do
-          echo "Saving logs for $c"
-          docker logs $c > /home/ubuntu/logs/$c.log 2>&1
+          docker logs $c > /home/ubuntu/logs_bundle/docker_logs/$c.log 2>&1
         done
 
+        # Copy your JSON file
+        cp /home/ubuntu/workspace/tradingviewalgo/app/tv_bridge_state.json \
+           /home/ubuntu/logs_bundle/ 2>/dev/null || echo "JSON file not found"
+
+        # Create tar
         cd /home/ubuntu
-        tar -czf logs.tar.gz logs
+        tar -czf logs_bundle.tar.gz logs_bundle
+
         EOF
 
-    - name: Download logs from server
+    - name: Download bundle from server
       run: |
         mkdir -p logs
         scp -o StrictHostKeyChecking=no \
         -i ~/.ssh/id_rsa \
-        ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/ubuntu/logs.tar.gz ./logs/
+        ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/ubuntu/logs_bundle.tar.gz ./logs/
 
-    - name: Extract logs
+    - name: Extract bundle
       run: |
-        tar -xzf logs/logs.tar.gz -C logs
+        tar -xzf logs/logs_bundle.tar.gz -C logs
 
-    - name: Upload logs as artifact
+    - name: Upload as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: docker-logs
+        name: logs-and-state
         path: logs/
