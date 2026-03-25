@@ -9,10 +9,7 @@ jobs:
 
     steps:
 
-    - name: Create logs directory
-      run: mkdir -p logs
-
-    - name: Fetch Docker logs from server
+    - name: Fetch logs from server
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.SERVER_IP }}
@@ -22,19 +19,23 @@ jobs:
           mkdir -p /home/ubuntu/logs
           docker ps --format "{{.Names}}" > container_list.txt
 
-          for container in $(cat container_list.txt); do
-            echo "Fetching logs for $container"
-            docker logs $container > /home/ubuntu/logs/$container.log 2>&1
+          for c in $(cat container_list.txt); do
+            docker logs $c > /home/ubuntu/logs/$c.log 2>&1
           done
 
-    - name: Copy logs from server
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_IP }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "/home/ubuntu/logs/*"
-        target: "./logs"
+          cd /home/ubuntu
+          tar -czf logs.tar.gz logs
+
+    - name: Download logs tar from server
+      run: |
+        mkdir -p logs
+        scp -o StrictHostKeyChecking=no \
+            -i <(echo "${{ secrets.SERVER_SSH_KEY }}") \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/ubuntu/logs.tar.gz ./logs/
+
+    - name: Extract logs
+      run: |
+        tar -xzf logs/logs.tar.gz -C logs
 
     - name: Upload logs as artifact
       uses: actions/upload-artifact@v4
