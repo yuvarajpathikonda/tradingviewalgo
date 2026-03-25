@@ -9,29 +9,35 @@ jobs:
 
     steps:
 
-    - name: Fetch logs from server
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_IP }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
-          mkdir -p /home/ubuntu/logs
-          docker ps --format "{{.Names}}" > container_list.txt
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
 
-          for c in $(cat container_list.txt); do
-            docker logs $c > /home/ubuntu/logs/$c.log 2>&1
-          done
+    - name: Generate logs on server
+      run: |
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+        ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+        
+        mkdir -p /home/ubuntu/logs
+        docker ps --format "{{.Names}}" > /home/ubuntu/container_list.txt
 
-          cd /home/ubuntu
-          tar -czf logs.tar.gz logs
+        for c in $(cat /home/ubuntu/container_list.txt); do
+          echo "Saving logs for $c"
+          docker logs $c > /home/ubuntu/logs/$c.log 2>&1
+        done
 
-    - name: Download logs tar from server
+        cd /home/ubuntu
+        tar -czf logs.tar.gz logs
+        EOF
+
+    - name: Download logs from server
       run: |
         mkdir -p logs
         scp -o StrictHostKeyChecking=no \
-            -i <(echo "${{ secrets.SERVER_SSH_KEY }}") \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/ubuntu/logs.tar.gz ./logs/
+        -i ~/.ssh/id_rsa \
+        ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/ubuntu/logs.tar.gz ./logs/
 
     - name: Extract logs
       run: |
